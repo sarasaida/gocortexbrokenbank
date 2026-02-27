@@ -1,0 +1,39 @@
+name: Build and Push BrokenBank to GHCR
+
+on:
+  workflow_dispatch: # Lancio manuale per la demo!
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Se nel repo main hai un Dockerfile, usiamo quello. 
+      # Altrimenti, scarichiamo un'immagine di test vulnerabile per la demo.
+      - name: Build and push image
+        run: |
+          # Se vuoi compilare il codice nel repo:
+          docker build . -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          # In alternativa, se vuoi andare sul sicuro come con WebGoat:
+          # docker pull [IMMAGINE_DI_RIFERIMENTO]
+          # docker tag [IMMAGINE_DI_RIFERIMENTO] ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          
+          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
