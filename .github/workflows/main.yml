@@ -1,13 +1,12 @@
 name: Manual Image Load and Deploy
 
 on:
-  workflow_dispatch: # La lanci tu a mano quando sei pronta
+  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  # L'immagine "buona" di partenza
-  SOURCE_IMAGE: ghcr.io/paloaltonetworks/broken-bank:latest
-  # La tua immagine di destinazione
+  # CAMBIATO: Usiamo l'immagine pubblica ufficiale su Docker Hub
+  SOURCE_IMAGE: docker.io/paloaltonetworks/gocortex-broken-bank:latest
   TARGET_IMAGE: ghcr.io/${{ github.repository }}:latest
   AWS_REGION: eu-central-1
   EKS_CLUSTER_NAME: clusit-lab
@@ -30,16 +29,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # STEP CHIAVE: Carichiamo l'immagine a mano nel tuo registro
+      # Non serve il login a Docker Hub per le immagini pubbliche
       - name: Pull, Tag and Push Image
         run: |
-          echo "Scarico l'immagine originale..."
+          echo "Scarico l'immagine da Docker Hub..."
           docker pull ${{ env.SOURCE_IMAGE }}
           
-          echo "La rinomino per il tuo account..."
+          echo "La rinomino per il tuo GHCR..."
           docker tag ${{ env.SOURCE_IMAGE }} ${{ env.TARGET_IMAGE }}
           
-          echo "La carico sul tuo GitHub Container Registry..."
+          echo "La carico sul tuo registro..."
           docker push ${{ env.TARGET_IMAGE }}
 
       - name: Configure AWS credentials
