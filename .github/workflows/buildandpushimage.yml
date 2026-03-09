@@ -22,17 +22,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Log in to the Container registry
+      #   uses: docker/login-action@v2
+      #   with:
+      #     registry: ${{ env.REGISTRY }}
+      #     username: ${{ github.actor }}
+      #     password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push image
-        run: |
-          docker build . -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      # - name: Build and push image
+      #   run: |
+      #     docker build . -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+      #     docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
