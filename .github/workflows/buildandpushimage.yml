@@ -45,38 +45,54 @@ jobs:
       - name: Deploy to EKS
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+      
           cat <<EOF | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: gocortexbrokenbank
+          ---
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: broken-bank
+            name: gocortexbrokenbank
+            namespace: gocortexbrokenbank
           spec:
             replicas: 1
             selector:
               matchLabels:
-                app: broken-bank
+                app: gocortexbrokenbank
             template:
               metadata:
                 labels:
-                  app: broken-bank
+                  app: gocortexbrokenbank
               spec:
                 containers:
-                - name: broken-bank
+                - name: gocortexbrokenbank
                   image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
                   imagePullPolicy: Always
                   ports:
+                  - containerPort: 8888
                   - containerPort: 8080
           ---
           apiVersion: v1
           kind: Service
           metadata:
-            name: broken-bank-service
+            name: gocortexbrokenbank
+            namespace: gocortexbrokenbank
+            labels:
+              app: gocortexbrokenbank
           spec:
             type: LoadBalancer
             selector:
-              app: broken-bank
+              app: gocortexbrokenbank
             ports:
-              - protocol: TCP
-                port: 80
+              - name: flask
+                port: 8888
+                targetPort: 8888
+                protocol: TCP
+              - name: tomcat
+                port: 9999
                 targetPort: 8080
+                protocol: TCP
           EOF
