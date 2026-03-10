@@ -95,4 +95,8 @@ jobs:
                 port: 9999
                 targetPort: 8080
                 protocol: TCP
+              - name: react
+                port: 7777
+                targetPort: 7777
+                protocol: TCP
           EOF
