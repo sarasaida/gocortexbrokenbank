@@ -6,6 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  # Trasformiamo il nome in minuscolo (GHCR è pignolo su questo)
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
@@ -32,7 +33,6 @@ jobs:
           context: .
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          # Qui aggiungiamo le label per la Traceability!
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             com.paloaltonetworks.app=broken-bank
@@ -48,14 +48,23 @@ jobs:
           username: admin
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
-            # Creiamo il file di deployment al volo sulla VM
+            # 1. Configurazione PATH
+            export PATH=$PATH:/snap/bin
+
+            # 2. Creazione Secret per scaricare l'immagine da GHCR (se non esiste)
+            # Questo serve perché il registro di GitHub è privato
+            /snap/bin/microk8s kubectl create secret docker-registry ghcr-login \
+              --docker-server=ghcr.io \
+              --docker-username=${{ github.actor }} \
+              --docker-password=${{ secrets.GITHUB_TOKEN }} \
+              --dry-run=client -o yaml | /snap/bin/microk8s kubectl apply -f -
+
+            # 3. Creazione del file di deployment
             cat <<EOF > ~/broken-bank-deploy.yaml
             apiVersion: apps/v1
             kind: Deployment
             metadata:
               name: broken-bank
-              labels:
-                app: broken-bank
             spec:
               replicas: 1
               selector:
@@ -69,8 +78,11 @@ jobs:
                   containers:
                   - name: broken-bank
                     image: ghcr.io/${{ github.repository }}:latest
+                    imagePullPolicy: Always
                     ports:
                     - containerPort: 7777
+                  imagePullSecrets:
+                  - name: ghcr-login
             ---
             apiVersion: v1
             kind: Service
@@ -85,6 +97,7 @@ jobs:
                   targetPort: 7777
                   nodePort: 30007
             EOF
-            
-            # Applichiamo il deploy su microk8s
-            microk8s kubectl apply -f ~/broken-bank-deploy.yaml
+
+            # 4. Applicazione del deploy e rollout restart per forzare l'aggiornamento
+            /snap/bin/microk8s kubectl apply -f ~/broken-bank-deploy.yaml
+            /snap/bin/microk8s kubectl rollout restart deployment/broken-bank
