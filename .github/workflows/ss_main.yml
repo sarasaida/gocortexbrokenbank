@@ -1,102 +1,57 @@
-name: Build, Push and Deploy BrokenBank
+name: Build and Deploy to EKS
 
 on:
   push:
-    branches: [ main ]      
-  workflow_dispatch:       
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-  AWS_REGION: eu-central-1          
-  EKS_CLUSTER_NAME: clusit-lab
+    tags:
+      - 'v*' # Si attiva solo quando pushi un tag che inizia con 'v' (es. v1.0, v1.1)
 
 jobs:
-  build-push-deploy:
+  deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Log in to the Container registry
-        uses: docker/login-action@v2
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # 1. Recupero del Tag (es. v1.0.2)
+      - name: Get tag version
+        id: vars
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Build and push image
-        run: |
-          docker build . -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-
+      # 2. AWS Authentication
+      # NOTA: Se il token è scaduto, assicurati che i segreti AWS_ACCESS_KEY_ID 
+      # e AWS_SECRET_ACCESS_KEY siano aggiornati su GitHub.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_SS }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SS }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN_SS }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 3. Build & Push con il Tag specifico
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: gocortexbrokenbank
+          IMAGE_TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG ./react-app
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      # 4. Update Kubernetes Deployment
+      # Invece di usare 'latest', forziamo l'immagine con il tag appena creato
+      - name: Update Kubeconfig
+        run: aws eks update-kubeconfig --name clusit-cluster --region eu-central-1
 
       - name: Deploy to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: gocortexbrokenbank
+          IMAGE_TAG: ${{ steps.vars.outputs.tag }}
         run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-      
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Namespace
-          metadata:
-            name: gocortexbrokenbank
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: gocortexbrokenbank
-            namespace: gocortexbrokenbank
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: gocortexbrokenbank
-            template:
-              metadata:
-                labels:
-                  app: gocortexbrokenbank
-              spec:
-                containers:
-                - name: gocortexbrokenbank
-                  image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-                  imagePullPolicy: Always
-                  ports:
-                  - containerPort: 8888
-                  - containerPort: 8080
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: gocortexbrokenbank
-            namespace: gocortexbrokenbank
-            labels:
-              app: gocortexbrokenbank
-          spec:
-            type: LoadBalancer
-            selector:
-              app: gocortexbrokenbank
-            ports:
-              - name: flask
-                port: 8888
-                targetPort: 8888
-                protocol: TCP
-              - name: tomcat
-                port: 9999
-                targetPort: 8080
-                protocol: TCP
-              - name: react
-                port: 7777
-                targetPort: 7777
-                protocol: TCP
-          EOF
+          # Aggiorna l'immagine nel deployment senza modificare il file YAML a mano
+          kubectl set image deployment/gocortexbrokenbank gocortexbrokenbank=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -n gocortexbrokenbank
+          kubectl rollout status deployment/gocortexbrokenbank -n gocortexbrokenbank
