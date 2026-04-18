@@ -23,7 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 1. Login al registro di GitHub (necessario per pushare l'immagine)
+      # 1. Login al registro di GitHub
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
@@ -31,8 +31,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build e Push usando il TAG dinamico (es. v1.0.2)
-      # Se non c'è un tag, usa il nome del branch (es. main)
+      # 2. Build e Push usando il TAG dinamico
       - name: Build and push image
         run: |
           IMAGE_TAG=${{ github.ref_name }}
@@ -47,8 +46,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SS }}
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN_SS }}
           aws-region: ${{ env.AWS_REGION }}
+      
+      # 4. Recupera l'IP pubblico del runner attuale
+      - name: Get runner IP
+        id: ip
+        run: echo "ipv4=$(curl -s https://checkip.amazonaws.com)" >> $GITHUB_OUTPUT
 
-      # 4. Deploy su EKS (puntando all'immagine con il tag specifico)
+      # 5. Aggiorna la allowlist di EKS includendo l'IP del runner e i baseline InfoSec
+      - name: Whitelist runner IP on EKS
+        run: |
+          echo "Updating EKS public access CIDRs to include runner IP: ${{ steps.ip.outputs.ipv4 }}"
+          aws eks update-cluster-config \
+            --name ${{ env.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }} \
+            --resources-vpc-config publicAccessCidrs="199.167.54.229/32,199.167.52.5/32,202.181.129.150/32,104.167.29.236/32,${{ steps.ip.outputs.ipv4 }}/32"
+
+      # 6. Attende che il cluster sia pronto (le modifiche di rete richiedono circa 1-2 minuti)
+      - name: Wait for EKS to be active
+        run: |
+          echo "Waiting for EKS to update the access list..."
+          aws eks wait cluster-active --name ${{ env.EKS_CLUSTER_NAME }}
+
+      # 7. Deploy su EKS
       - name: Deploy to EKS
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
