@@ -3,7 +3,6 @@
 # GoCortex Broken Bank
 
 ## Overview
-## Trigger
 
 GoCortex Broken Bank is an intentionally vulnerable application designed specifically to support Palo Alto Networks Cortex Cloud + Palo Alto Networks Cortex XSIAM/XDR training. It contains deliberately implemented security vulnerabilities for CI/CD security validation, covering common misconfigurations for assessment and exploitation.
 
